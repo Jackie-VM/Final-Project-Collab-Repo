@@ -33,7 +33,7 @@ def render_sidebar(service):
             customer_nav_button("Manage Services", "manage_services", "manage_services_btn")
             customer_nav_button("Revenue Tracker", "revenue_tracker", "revenue_tracker_btn")
             customer_nav_button("Review Feedback", "review_feedback", "review_feedback_btn")
-
+            customer_nav_button("Penny the Polish Pro", "penny_chat", "employee_penny_chat_btn")
         st.divider()
 
         if st.button("Logout", key="logout_btn", use_container_width=True):
@@ -44,6 +44,8 @@ def render_sidebar(service):
             st.session_state["selected_appointment_id"] = None
             st.session_state["restock_item_id"] = None
             st.session_state["messages"] = []
+            st.session_state["messages_loaded_for"] = None
+
             st.rerun()
 
 

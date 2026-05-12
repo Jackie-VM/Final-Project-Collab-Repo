@@ -1,5 +1,6 @@
 from datetime import datetime, date
 import streamlit as st
+from ui.customer_ui import render_penny_chat
 
 
 def render_employee_pages(service):
@@ -24,6 +25,8 @@ def render_employee_pages(service):
     elif st.session_state["page"] == "review_feedback":
         render_review_feedback(service)
 
+    elif st.session_state["page"] == "penny_chat":
+        render_penny_chat(service)
 
 def get_employee_total_charge_with_tips(service, employee_name):
     total = 0
