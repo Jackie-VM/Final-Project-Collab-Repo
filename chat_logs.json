@@ -1,0 +1,12 @@
+[
+  {
+    "user_email": "customer@example.com",
+    "user_message": "what rewards do i have",
+    "assistant_message": "You currently have 0 reward points and no reward history, so you don\u2019t have any redeemable rewards right now.\n\nAvailable rewards and required points:\n- 10% Off Next Service \u2014 50 points\n- Free Nail Art Design \u2014 100 points\n- Free Basic Manicure \u2014 250 points\n- Free Gel Manicure \u2014 400 points\n\nWhen you\u2019ve earned enough points you can redeem a reward in your account or at checkout. Want me to help you book a service or show service prices so you can plan toward a reward?"
+  },
+  {
+    "user_email": "customer@example.com",
+    "user_message": "who are the techs",
+    "assistant_message": "Our current nail techs are:\n- Marissa\n- Jackie\n- Eesha Shahi\n\nWould you like to book with one of them or check their availability for a specific service/time?"
+  }
+]

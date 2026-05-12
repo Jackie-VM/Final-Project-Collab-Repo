@@ -40,6 +40,9 @@ def init_session_state():
     if "messages" not in st.session_state:
         st.session_state["messages"] = []
 
+    if "messages_loaded_for" not in st.session_state:
+        st.session_state["messages_loaded_for"] = None
+
 def main():
     st.set_page_config(
         page_title="Polished to Perfection",

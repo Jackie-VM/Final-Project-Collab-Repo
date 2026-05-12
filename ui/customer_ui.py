@@ -1,5 +1,11 @@
 from datetime import datetime, date
+import json
+import os
 import streamlit as st
+from dotenv import load_dotenv
+from bot_logic import ChatLoggerStore, SalonAssistantBot
+
+load_dotenv()
 
 
 def render_customer_pages(service):
@@ -545,84 +551,191 @@ def render_feedback_form(service, user_appts):
     else:
         st.info("You have not submitted any feedback yet.")
 
+def build_salon_context_from_service(service) -> str:
+    current_user = st.session_state["user"]
+    role = st.session_state["role"]
+
+    user_email = current_user.get("email", "")
+    user_name = current_user.get("full_name", "")
+
+    service_prices = service.get_service_prices()
+
+    if role == "Customer":
+        visible_appointments = []
+
+        for appt in service.store.appointments:
+            if appt.get("client_email") == user_email:
+                visible_appointments.append(appt)
+
+        visible_feedback = []
+
+        for feedback in service.store.feedback_list:
+            if feedback.get("customer_email") == user_email:
+                visible_feedback.append(feedback)
+
+        context = {
+            "current_user": {
+                "full_name": user_name,
+                "email": user_email,
+                "role": role,
+                "reward_points": current_user.get("reward_points", 0),
+                "reward_history": current_user.get("reward_history", [])
+            },
+            "available_services": service_prices,
+            "reward_options": service.reward_options,
+            "employee_names": service.employee_names,
+            "customer_appointments": visible_appointments,
+            "customer_feedback": visible_feedback
+        }
+
+    elif role == "Employee":
+        visible_appointments = []
+
+        for appt in service.store.appointments:
+            if appt.get("employee") == user_name:
+                visible_appointments.append(appt)
+
+        context = {
+            "current_user": {
+                "full_name": user_name,
+                "email": user_email,
+                "role": role
+            },
+            "available_services": service_prices,
+            "reward_options": service.reward_options,
+            "employee_names": service.employee_names,
+            "employee_appointments": visible_appointments,
+            "inventory": service.store.inventory,
+            "feedback": service.store.feedback_list
+        }
+
+    else:
+        context = {
+            "current_user": {
+                "full_name": user_name,
+                "email": user_email,
+                "role": role
+            },
+            "available_services": service_prices,
+            "reward_options": service.reward_options,
+            "employee_names": service.employee_names
+        }
+
+    return json.dumps(context, indent=2)
 
 def render_penny_chat(service):
-    reward_points = st.session_state["user"].get("reward_points", 0)
-
     st.title("Penny the Polish Pro")
     st.caption("Your AI salon assistant.")
     st.divider()
 
-    st.info("Ask Penny about appointments, booking, cancellations, services, rewards, and nail tech information.")
-
-    if st.button("Clear Chat", key="clear_customer_chat", type="primary"):
-        st.session_state["messages"] = []
-        st.rerun()
-
-    for message in st.session_state["messages"]:
-        with st.chat_message(message["role"]):
-            st.write(message["content"])
-
-    prompt = st.chat_input(
-        "Ask Penny the Polish Pro, our AI salon assistant, something...",
-        key="customer_chat_input",
+    st.info(
+        "Ask Penny about appointments, booking, cancellations, services, rewards, feedback, nail tech information, inventory, and salon operations."
     )
 
-    if prompt:
-        st.session_state["messages"].append({"role": "user", "content": prompt})
+    api_key = os.getenv("OPENAI_API_KEY")
 
-        prompt_lower = prompt.lower()
+    if not api_key:
+        try:
+            api_key = st.secrets.get("OPENAI_API_KEY", None)
+        except Exception:
+            api_key = None
 
-        user_appts_for_chat = []
+    if not api_key:
+        st.error("OPENAI_API_KEY was not found. Check your .env file or Streamlit Secrets.")
+        st.stop()
 
-        for appt in service.store.appointments:
-            if "client_email" in appt and appt["client_email"] == st.session_state["user"]["email"]:
-                user_appts_for_chat.append(appt)
+    logger = ChatLoggerStore("chat_logs.json")
 
-        if "appointment" in prompt_lower and "have" in prompt_lower:
-            if user_appts_for_chat:
-                response = "You currently have these appointments:\n"
+    salon_context = build_salon_context_from_service(service)
 
-                for appt in user_appts_for_chat:
-                    response += f"- {appt['date']} at {appt['time']} for {appt['service']} with {appt['employee']}\n"
-            else:
-                response = "You do not have any appointments booked right now."
+    bot = SalonAssistantBot(
+        api_key=api_key,
+        context_data=salon_context,
+        role=st.session_state["role"]
+    )
 
-        elif "cancel" in prompt_lower:
-            response = "To cancel an appointment, go to the My Appointments section and select your appointment in the Upcoming tab."
+    user_email = st.session_state["user"]["email"]
 
-        elif "service" in prompt_lower:
-            response = "Available services are:\n"
+    # st.session_state["messages"] is only for visible chat bubbles.
+    # The hidden AI prompt is created inside the bot class and is not shown.
+    if "messages" not in st.session_state:
+        st.session_state["messages"] = []
 
-            for salon_service in service.store.services:
-                response += f"- {salon_service['name']}: ${salon_service['price']}\n"
+    if "messages_loaded_for" not in st.session_state:
+        st.session_state["messages_loaded_for"] = None
 
-        elif "status" in prompt_lower:
-            if user_appts_for_chat:
-                response = "Here are your current appointment statuses:\n"
+    if st.session_state["messages_loaded_for"] != user_email:
+        st.session_state["messages"] = []
 
-                for appt in user_appts_for_chat:
-                    response += f"- {appt['service']} on {appt['date']} is {appt.get('status', 'Scheduled')}\n"
-            else:
-                response = "You do not have any appointment statuses to check right now."
+        logs = logger.load_logs_for_user(user_email)
 
-        elif "employee" in prompt_lower or "tech" in prompt_lower:
-            response = "Current nail techs are Marissa, Jackie, and Eesha."
+        for log in logs:
+            st.session_state["messages"].append({
+                "role": "user",
+                "content": log["user_message"]
+            })
 
-        elif "book" in prompt_lower or "schedule" in prompt_lower:
-            response = "To book an appointment, go to the Book Appointment section, choose a service, employee, date, and time, then click Book Appointment."
+            st.session_state["messages"].append({
+                "role": "assistant",
+                "content": log["assistant_message"]
+            })
 
-        elif "reward" in prompt_lower or "points" in prompt_lower:
-            response = f"You currently have {reward_points} reward points. You earn 10 points for each completed appointment."
+        if len(st.session_state["messages"]) == 0:
+            st.session_state["messages"].append({
+                "role": "assistant",
+                "content": "Hi! I’m Penny the Polish Pro. Ask me a question about Polished to Perfection."
+            })
 
-        elif "tip" in prompt_lower or "price" in prompt_lower or "cost" in prompt_lower:
-            response = "Each appointment includes the basic service charge plus a 20% tip."
+        st.session_state["messages_loaded_for"] = user_email
 
-        elif "hello" in prompt_lower or "hi" in prompt_lower:
-            response = "Hi! I am Penny the Polish Pro. I can help with appointments, services, rewards, cancellations, and nail tech information."
+    col1, col2 = st.columns([1, 4])
 
-        else:
-            response = "I can help with appointments, booking, cancellations, services, rewards, prices, and nail tech information."
+    with col1:
+        if st.button("Clear Chat", key="clear_penny_chat", type="primary"):
+            st.session_state["messages"] = []
+            logger.clear_logs_for_user(user_email)
+            st.session_state["messages"].append({
+                "role": "assistant",
+                "content": "Chat cleared! Ask me a new question about Polished to Perfection."
+            })
+            st.rerun()
 
-        st.session_state["messages"].append({"role": "assistant", "content": response})
-        st.rerun()
+    chat_container = st.container()
+
+    with chat_container:
+        for message in st.session_state["messages"]:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+    user_input = st.chat_input(
+        "Ask Penny the Polish Pro something...",
+        key="penny_chat_input"
+    )
+
+    if user_input:
+        st.session_state["messages"].append({
+            "role": "user",
+            "content": user_input
+        })
+
+        with chat_container.chat_message("user"):
+            st.markdown(user_input)
+
+        with chat_container.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                response_text = bot.get_ai_response(
+                    st.session_state["messages"]
+                )
+
+                st.markdown(response_text)
+
+        st.session_state["messages"].append({
+            "role": "assistant",
+            "content": response_text
+        })
+
+        logger.append_log(
+            user_email=user_email,
+            user_message=user_input,
+            assistant_message=response_text
+        )
